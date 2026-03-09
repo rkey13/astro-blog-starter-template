@@ -1,1 +1,250 @@
+k---
+import Layout from '../layouts/BlogPost.astro';
+---
 
+<Layout
+	title="Frog Game1"
+	description="Frog Game Test 1"
+	pubDate={new Date('Feb 24 2026')}
+	heroImage="/beebook.png"
+>
+		
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Frog vs. Police Platformer</title>
+<style>
+  body {
+    margin: 0; background: #222; color: white;
+    display: flex; flex-direction: column; align-items: center;
+    font-family: sans-serif; height: 100vh; justify-content: center;
+  }
+  canvas {
+    background: #87CEEB; border: 4px solid #fff; border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+  }
+  .controls { margin-top: 15px; font-size: 1.1rem; }
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas" width="800" height="400"></canvas>
+<div class="controls">Keys: Left/Right Arrows or A/D to move | Up Arrow, W, or Space to jump</div>
+
+<script>
+// --- ERROR CATCHER ---
+// If the game crashes, this will print the bug right onto the screen!
+window.onerror = function(msg, url, line) {
+    const c = document.getElementById('gameCanvas');
+    if (c) {
+        const context = c.getContext('2d');
+        context.fillStyle = 'black';
+        context.fillRect(0, 0, c.width, c.height);
+        context.fillStyle = 'red';
+        context.font = '20px Arial';
+        context.fillText("CRASH ERROR: " + msg + " (Line " + line + ")", 20, 50);
+    }
+};
+
+// --- GAME ENGINE ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+let gameActive = true;
+let score = 0;
+let wave = 1;
+let state = 'playing'; // 'playing', 'gameover', 'wavecleared'
+let timer = 0;
+
+// Input Handling
+const keys = { left: false, right: false, up: false };
+window.addEventListener('keydown', function(e) {
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+  if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W' || e.key === ' ') keys.up = true;
+});
+window.addEventListener('keyup', function(e) {
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+  if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W' || e.key === ' ') keys.up = false;
+});
+
+// Physics setup
+const gravity = 0.6;
+const friction = 0.8;
+let player = { x: 50, y: 300, w: 30, h: 30, vx: 0, vy: 0, jump: -12, grounded: false };
+
+const platforms = [
+  { x: 0, y: 360, w: 800, h: 40 },
+  { x: 200, y: 280, w: 120, h: 20 },
+  { x: 450, y: 200, w: 120, h: 20 },
+  { x: 50, y: 140, w: 100, h: 20 },
+  { x: 650, y: 120, w: 100, h: 20 }
+];
+
+let enemies = [];
+
+// Collision math
+function AABB(r1, r2) {
+  return r1.x < r2.x + r2.w && r1.x + r1.w > r2.x &&
+         r1.y < r2.y + r2.h && r1.y + r1.h > r2.y;
+}
+
+function startWave() {
+  player.x = 50; player.y = 300; player.vx = 0; player.vy = 0;
+  enemies = [];
+  const zones = [
+    { min: 200, max: 750, y: 330 },
+    { min: 200, max: 290, y: 250 },
+    { min: 450, max: 540, y: 170 },
+    { min: 650, max: 720, y: 90 }
+  ];
+  for (let i = 0; i < wave; i++) {
+    let z = zones[Math.floor(Math.random() * zones.length)];
+    enemies.push({
+      x: z.min + Math.random()*(z.max - z.min), y: z.y, w: 30, h: 30,
+      vx: Math.random() > 0.5 ? 1.5 : -1.5,
+      minX: z.min - 10, maxX: z.max + 10, alive: true
+    });
+  }
+  state = 'playing';
+}
+
+function update() {
+  if (!gameActive) return;
+  
+  try { // Try wrapper catches game logic errors
+    if (state === 'playing') {
+      
+      // X-Axis Movement
+      if (keys.left) player.vx -= 1.2;
+      if (keys.right) player.vx += 1.2;
+      player.vx *= friction;
+      player.x += player.vx;
+
+      // Screen boundaries
+      if (player.x < 0) { player.x = 0; player.vx = 0; }
+      if (player.x + player.w > canvas.width) { player.x = canvas.width - player.w; player.vx = 0; }
+
+      // X-Axis Collisions
+      for (let i = 0; i < platforms.length; i++) {
+        let p = platforms[i];
+        if (AABB(player, p)) {
+          if (player.vx > 0) { player.x = p.x - player.w; player.vx = 0; }
+          else if (player.vx < 0) { player.x = p.x + p.w; player.vx = 0; }
+        }
+      }
+
+      // Y-Axis Movement
+      player.vy += gravity;
+      player.y += player.vy;
+      player.grounded = false;
+
+      // Y-Axis Collisions
+      for (let i = 0; i < platforms.length; i++) {
+        let p = platforms[i];
+        if (AABB(player, p)) {
+          if (player.vy > 0) { player.y = p.y - player.h; player.vy = 0; player.grounded = true; }
+          else if (player.vy < 0) { player.y = p.y + p.h; player.vy = 0; }
+        }
+      }
+
+      // Jump & Pit death
+      if (keys.up && player.grounded) player.vy = player.jump;
+      if (player.y > canvas.height) { state = 'gameover'; timer = 90; wave = Math.max(1, wave - 1); score = 0; }
+
+      // Enemy Logic
+      let aliveCount = 0;
+      for (let i = 0; i < enemies.length; i++) {
+        let e = enemies[i];
+        if (!e.alive) continue;
+        aliveCount++;
+        
+        e.x += e.vx;
+        if (e.x < e.minX || e.x + e.w > e.maxX || e.x < 0 || e.x + e.w > canvas.width) e.vx *= -1;
+
+        if (AABB(player, e)) {
+          // Squish mechanic
+          if (player.vy > 0 && player.y + player.h < e.y + e.h * 0.8) {
+            e.alive = false; player.vy = player.jump * 0.7; score += 100;
+          } else {
+            // Bust mechanic
+            state = 'gameover'; timer = 90; wave = Math.max(1, wave - 1); score = 0;
+          }
+        }
+      }
+      if (aliveCount === 0) { state = 'wavecleared'; timer = 90; wave++; }
+      
+    } else {
+      // Transition menus
+      timer--;
+      if (timer <= 0) startWave();
+    }
+    
+    draw();
+    requestAnimationFrame(update);
+    
+  } catch(err) { // If an error happens, print it!
+    gameActive = false;
+    ctx.fillStyle = 'black'; ctx.fillRect(0,0,800,400);
+    ctx.fillStyle = 'red'; ctx.font = '20px Arial';
+    ctx.fillText("Crash in Update: " + err.message, 20, 50);
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Draw Blocks
+  for (let i = 0; i < platforms.length; i++) {
+    let p = platforms[i];
+    ctx.fillStyle = p.y === 360 ? '#4a3018' : '#b36b22';
+    ctx.fillRect(p.x, p.y, p.w, p.h);
+    ctx.strokeStyle = '#000'; ctx.strokeRect(p.x, p.y, p.w, p.h);
+  }
+
+  // Draw Enemies
+  for (let i = 0; i < enemies.length; i++) {
+    let e = enemies[i];
+    if (!e.alive) continue;
+    ctx.fillStyle = '#00008B'; ctx.fillRect(e.x, e.y, e.w, e.h);
+    ctx.fillStyle = '#FFD700'; ctx.fillRect(e.x + 10, e.y + 12, 10, 10);
+    ctx.fillStyle = '#111';
+    if (e.vx > 0) ctx.fillRect(e.x + 15, e.y, 20, 6); else ctx.fillRect(e.x - 5, e.y, 20, 6);
+  }
+
+  // Draw Player
+  if (state !== 'gameover' || timer % 10 > 5) {
+    ctx.fillStyle = '#32CD32'; ctx.fillRect(player.x, player.y, player.w, player.h);
+    ctx.fillStyle = '#FFF'; ctx.fillRect(player.x+4, player.y-6, 10, 10); ctx.fillRect(player.x+16, player.y-6, 10, 10);
+    ctx.fillStyle = '#000';
+    let px = keys.right ? 4 : (keys.left ? 0 : 2);
+    ctx.fillRect(player.x+4+px, player.y-4, 4, 6); ctx.fillRect(player.x+16+px, player.y-4, 4, 6);
+  }
+
+  // Draw Text
+  ctx.fillStyle = '#000'; ctx.font = 'bold 24px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText("Score: " + score, 15, 30);
+  ctx.textAlign = 'right'; ctx.fillText("Wave: " + wave, canvas.width - 15, 30);
+
+  // Overlays
+  if (state === 'gameover') {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = '#FF4500'; ctx.font = 'bold 50px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText("BUSTED!", canvas.width/2, canvas.height/2);
+  } else if (state === 'wavecleared') {
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = '#32CD32'; ctx.font = 'bold 50px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText("WAVE CLEARED!", canvas.width/2, canvas.height/2);
+  }
+}
+
+// Start
+startWave();
+update();
+</script>
+</body>
+</html>
+
+</Layout>
